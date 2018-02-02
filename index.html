@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html>
+	<head>
+		<meta charset="utf-8">
+		<title>Street View</title>
+		<style>
+		html, body
+		{
+			height: 100%;
+			margin: 0;
+			padding: 0;
+		}
+		#street-view
+		{
+			position: relative;
+			width: 100%;
+			height: calc(100% - 60px);
+			background: #000;
+		} 
+
+		#map
+		{
+			position: absolute;
+			bottom: 8px;
+			right: 8px;
+			width: 200px;
+			height: 50px;
+			border: 2px solid #555;
+			z-index: 100;
+		}
+		
+		#map:hover
+		{
+			width: 90%;
+			height: 90%;
+		}
+		
+		#loading
+		{
+			background: #000;
+			color: #fff;
+		}
+		</style>
+		<script>
+		var panorama;
+		var map;
+		var marker;
+		var startLocationMarker;
+		var currentLocationMarker;
+		
+		var mapClickedLatitude;
+		var mapClickedLongitude;
+		
+		//Default location, by Berkeley
+		var panoramaStartLatitude = 37.869260;
+		var panoramaStartLongitude = -122.254811;
+		
+		var panoramaCurrentLatitude;
+		var panoramaCurrentLongitude;
+			
+		var keepLooking = true;
+		
+		var sv;
+		
+		function initialize()
+		{
+			sv = new google.maps.StreetViewService();
+			chooseNewLocation();
+		}
+		
+		function chooseLocation()
+		{
+			return [getRandomLatitude(), getRandomLongitude()];
+		}
+		
+		function getRandomLatitude()
+		{
+			return (Math.random() * 90) - (Math.random() * 90);
+		}
+		
+		function getRandomLongitude()
+		{
+			return (Math.random() * 180) - (Math.random() * 180);
+		}
+		
+		function chooseNewLocation()
+		{
+			panorama = null;
+			document.getElementById("loading").innerHTML = "Finding random location, please wait. This can take up to a minute.";
+			document.getElementById("buttonMakeGuess").disabled = true;
+			var location = chooseLocation();
+			panoramaStartLatitude = location[0];
+			panoramaStartLongitude = location[1];
+			sv.getPanorama({location: new google.maps.LatLng(panoramaStartLatitude, panoramaStartLongitude), radius: 50}, evaluateNewLocation);
+		}
+		
+		function evaluateNewLocation(data, status)
+		{
+			if(status != "OK")
+			{
+				keepLooking = false;
+				console.log(status);
+				chooseNewLocation();
+			}
+			else
+			{
+				newLocation();
+			}
+		}
+		
+		function newLocation()
+		{
+			document.getElementById("loading").innerHTML = "";
+			marker = null;
+			startLocationMarker = null;
+			currentLocationMarker = null;
+		
+			mapClickedLatitude = null;
+			mapClickedLongitude = null;
+			
+			panoramaCurrentLatitude = null;
+			panoramaCurrentLongitude = null;
+			
+			document.getElementById("resultDistanceCurrent").innerHTML = "";
+			document.getElementById("resultDistanceStart").innerHTML = "";
+			
+			panorama = new google.maps.StreetViewPanorama(document.getElementById('street-view'),
+			{
+				position:
+				{
+					lat: panoramaStartLatitude,
+					lng: panoramaStartLongitude
+				},
+				pov:
+				{
+					heading: 0,
+					pitch: 0
+				},
+				zoom: 1,
+				addressControl: false,
+				showRoadLabels: false
+			});
+			
+			map = new google.maps.Map(document.getElementById('map'),
+			{
+				zoom: 1,
+				center:
+				{
+					lat: 0,
+					lng: 0
+				},
+				disableDefaultUI: true
+			});
+			
+			google.maps.event.addListener(map, 'click', function(event)
+			{
+				panoramaCurrentLatitude = panorama.getPosition().lat();
+				panoramaCurrentLongitude = panorama.getPosition().lng();
+				mapClickedLatitude = event.latLng.lat();
+				mapClickedLongitude = event.latLng.lng();
+				
+				document.getElementById("buttonMakeGuess").disabled = false;
+				
+				if(marker == null)
+				{
+					marker = new google.maps.Marker(
+					{
+						position:
+						{
+							lat: mapClickedLatitude,
+							lng: mapClickedLongitude
+						},
+						map: map
+					});
+				}
+				else
+				{
+					marker.setPosition(new google.maps.LatLng(mapClickedLatitude, mapClickedLongitude));
+				}
+			});
+		}
+		
+		function showResult()
+		{
+			startLocationMarker = new google.maps.Marker(
+			{
+				position:
+				{
+					lat: panoramaStartLatitude,
+					lng: panoramaStartLongitude
+				},
+				map: map,
+				icon: 'http://maps.google.com/mapfiles/ms/icons/green-dot.png'
+			});
+			
+			currentLocationMarker = new google.maps.Marker(
+			{
+				position:
+				{
+					lat: panoramaCurrentLatitude,
+					lng: panoramaCurrentLongitude
+				},
+				map: map,
+				icon: 'http://maps.google.com/mapfiles/ms/icons/blue-dot.png'
+			});
+			
+			document.getElementById("resultDistanceCurrent").innerHTML = "Distance from location:\n" + formatDistance(mapClickedLatitude, mapClickedLongitude, panoramaCurrentLatitude, panoramaCurrentLongitude);
+			document.getElementById("resultDistanceStart").innerHTML = "Distance from start:\n" + formatDistance(mapClickedLatitude, mapClickedLongitude, panoramaStartLatitude, panoramaStartLongitude);
+		}
+		
+		function formatDistance(lat1, lon1, lat2, lon2)
+		{
+			var distance = calculateDistance(lat1, lon1, lat2, lon2);
+			if(distance > 1000)
+				return (Math.round((distance / 1000) * 10) / 10).toLocaleString() + " km";
+			return distance.toLocaleString() + " m";
+		}
+		
+		function calculateDistance(lat1, lon1, lat2, lon2)
+		{
+			var R = 6371e3; //metres
+			var φ1 = toRadian(lat1);
+			var φ2 = toRadian(lat2);
+			var Δφ = toRadian(lat2-lat1);
+			var Δλ = toRadian(lon2-lon1);
+			
+			var a = Math.sin(Δφ/2) * Math.sin(Δφ/2) +
+					Math.cos(φ1) * Math.cos(φ2) *
+					Math.sin(Δλ/2) * Math.sin(Δλ/2);
+			var c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+			var d = R * c;
+			
+			return Math.round(d);
+		}
+		
+		function toRadian(degrees)
+		{
+		  return degrees * Math.PI / 180;
+		}
+		
+		function resizeMap()
+		{
+			google.maps.event.trigger(map, "resize");
+		}
+		</script>
+	</head>
+	<body>
+		<div id="loading"></div>
+		<div id="map" onmouseover="resizeMap()"></div>
+		<div id="street-view"></div>
+		<button id="buttonMakeGuess" type="button" onclick="showResult()">Make guess</button>
+		<button id="buttonNewLocation" type="button" onclick="chooseNewLocation()">New location</button>
+		<div>
+			<div id="resultDistanceCurrent"></div>
+			<div id="resultDistanceStart"></div>
+		</div>
+		<script async defer
+		src="https://maps.googleapis.com/maps/api/js?key= AIzaSyCC8C7MQRos_4Y3FTs4BDxdnXkiq5t7zno &callback=initialize">
+		</script>
+	</body>
+</html>
